@@ -1,0 +1,70 @@
+{
+	"name": "mintree",
+	"version": "0.5.30",
+	"description": "Issue-driven git worktrees + Claude Code sessions for repos with an opinionated SDD+TDD flow.",
+	"license": "MIT",
+	"author": "Martin Mineo <martinmineo@gmail.com>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/minex-labs/mintree.git"
+	},
+	"bugs": {
+		"url": "https://github.com/minex-labs/mintree/issues"
+	},
+	"homepage": "https://github.com/minex-labs/mintree#readme",
+	"keywords": [
+		"git",
+		"worktree",
+		"cli",
+		"github",
+		"issues",
+		"claude",
+		"ai"
+	],
+	"bin": {
+		"mintree": "dist/cli.js"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"build": "rm -rf dist && node ./node_modules/typescript/bin/tsc && chmod +x dist/cli.js",
+		"dev": "node ./node_modules/typescript/bin/tsc --watch",
+		"start": "node dist/cli.js",
+		"lint": "eslint source",
+		"lint:fix": "eslint source --fix",
+		"format": "prettier --write source",
+		"test": "node --import tsx --test test/*.test.ts"
+	},
+	"files": [
+		"dist",
+		"shell",
+		"README.md"
+	],
+	"dependencies": {
+		"ink": "^6.0.0",
+		"ink-spinner": "^5.0.0",
+		"ink-text-input": "^6.0.0",
+		"pastel": "^4.0.0",
+		"react": "^19.0.0",
+		"zod": "^4.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"@types/react": "^19.0.0",
+		"@typescript-eslint/eslint-plugin": "^8.52.0",
+		"@typescript-eslint/parser": "^8.52.0",
+		"eslint": "^9.39.2",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-plugin-prettier": "^5.5.5",
+		"ink-testing-library": "^4.0.0",
+		"prettier": "^3.7.4",
+		"tsx": "^4.22.4",
+		"typescript": "^5.7.0"
+	},
+	"overrides": {
+		"ws@8.20.0": "^8.20.1",
+		"brace-expansion@5.0.5": "^5.0.6"
+	}
+}

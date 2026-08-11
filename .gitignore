@@ -1,0 +1,12 @@
+node_modules
+*.log
+
+# `dist/` is intentionally checked in so `npm install -g github:...` can
+# use the package without building TypeScript at install time. npm's git
+# install flow runs `prepare` before dependencies materialise on disk in
+# some versions — committing the built output sidesteps that entirely.
+# Run `npm run build` before committing source/ changes.
+
+# Mintree per-repo state (sólo aplica si este repo se llegara a usar como repo target — no debería)
+.mintree/worktrees/
+.mintree/session-states/
