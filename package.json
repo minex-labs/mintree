@@ -1,6 +1,6 @@
 {
 	"name": "mintree",
-	"version": "0.5.30",
+	"version": "0.5.31",
 	"description": "Issue-driven git worktrees + Claude Code sessions for repos with an opinionated SDD+TDD flow.",
 	"license": "MIT",
 	"author": "Martin Mineo <martinmineo@gmail.com>",
