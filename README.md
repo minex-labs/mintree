@@ -8,6 +8,7 @@
   <a href="https://www.npmjs.com/package/mintree"><img src="https://img.shields.io/npm/v/mintree.svg" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/mintree"><img src="https://img.shields.io/npm/dm/mintree.svg" alt="npm downloads"></a>
   <a href="https://github.com/minex-labs/mintree/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/mintree.svg" alt="license"></a>
+  <a href="https://github.com/minex-labs/mintree/actions/workflows/ci.yml"><img src="https://github.com/minex-labs/mintree/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
 </p>
 
 <p align="center">
@@ -378,6 +379,29 @@ mintree was written for projects that have:
 - Skills (`.claude/skills/`) that own the SDD + TDD flow — mintree intentionally leaves the rich PR-create / PR-review prompts out of scope.
 
 The implementation copies santree's stack (TypeScript + Ink + Pastel + Zod) and visual style (split pane, alt-screen, marker-based shell wrapper) so the two feel similar in use.
+
+---
+
+## Development
+
+```bash
+npm ci
+npm test          # node:test + tsx, 107 tests, no network
+npm run lint      # eslint over source/
+npm run build     # tsc -> dist/ (tracked: the installed binary runs it)
+```
+
+`dist/` is committed, so any source change needs `npm run build` **and** `git add dist` in the same commit.
+
+CI (`.github/workflows/ci.yml`) runs on every pull request and on every push to `main`:
+
+| Job | What it checks |
+|---|---|
+| `test` | The suite on Node 20 / 22 / 24 (the floor is `engines.node >= 20`) |
+| `lint` | `eslint source` |
+| `dist is up to date` | Rebuilds and fails if the committed `dist/` differs from `source/` |
+
+To make a merge to `main` impossible while CI is red, mark those jobs as required in **Settings → Branches → Branch protection rules**.
 
 ---
 

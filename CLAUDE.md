@@ -397,6 +397,16 @@ Cambios de la 0.5.30 (limpieza previa a abrir el repo):
 - Los tests siguen verdes (107/107) y conservan su intención al renombrar los fixtures: p. ej. el caso "una team key no matchea si está embebida en una palabra del slug" quedó como `ofe-68` vs la key `FE`.
 - **El historial de git se descartó**: el repo público arranca desde un commit inicial único, porque los nombres viejos vivían en commits ya hechos y limpiar sólo el working tree no los sacaba de `git log`. Se conservó el historial completo en un branch/tag local (`pre-public-history`) por si hace falta consultarlo.
 
+Cambios de la 0.5.31 (CI en GitHub Actions):
+
+- **0.5.31** (`ci`): primer workflow del repo, `.github/workflows/ci.yml`. Corre en **pull_request contra main** y en **push a main**, o sea que cubre tanto el pre-merge como el post-merge. GitHub Actions **no consume minutos** en repos públicos con runners estándar (confirmado contra la doc de billing: *"GitHub Actions usage is free … for public repositories that use standard GitHub-hosted runners"*), así que el costo es cero.
+  - Tres jobs: **`test`** (matrix Node 20/22/24 — 20 es el floor que declara `engines.node`), **`lint`** (`eslint source`) y **`dist is up to date`**, que rebuildea y falla si el `dist/` commiteado difiere del `source/`. El tercero existe por [[project-dist-tracked]]: `dist/` está trackeado y es lo que ejecuta el binario instalado, así que un `dist/` viejo publica código roto aunque los tests estén verdes — es un modo de falla que ni los tests ni el lint detectan.
+  - `concurrency` cancela runs viejos del **mismo PR** al pushear encima, pero nunca cancela los de `main`. `permissions: contents: read` (el workflow no escribe nada).
+  - Actions pinneadas a `actions/checkout@v6` + `actions/setup-node@v6` (hay v7, de julio 2026; v6 es el punto maduro). `cache: npm` + `npm ci` contra el lockfile.
+  - **Verificado antes de pushear, no asumido**: la suite completa se corrió en Linux dentro de containers `node:20`, `node:22` y `node:24` (107/107 en las tres), más `npm run lint` y un rebuild de `dist/` byte-idéntico al commiteado. Los tests son offline (git local en tmpdir, `fetch` mockeado en `linear.test.ts`) y setean su propia identidad de git, así que no necesitan nada del runner.
+  - **Falta un paso manual**: para que un merge a `main` sea imposible con CI en rojo hay que marcar los jobs como **required** en Settings → Branches. El workflow por sí solo reporta, no bloquea.
+  - README: badge de CI en el header + sección *Development* con los comandos y la tabla de jobs.
+
 Áreas que NO se atacaron y siguen pendientes para futuro:
 
 - `init --provider linear` interactivo: hoy hay que pasar `--team` repetido o editar `metadata.json`. Lo ideal es que `init` consulte la API y deje elegir equipos.
