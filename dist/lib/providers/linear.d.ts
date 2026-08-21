@@ -121,4 +121,38 @@ export type LinearSetupCheck = {
     hint?: string;
 };
 export declare function checkLinearSetup(repoRoot: string): Promise<LinearSetupCheck>;
+/**
+ * Outcome of resolving an issue identifier to Linear's suggested branch name.
+ *
+ * Three states, not two, because the caller reacts differently to each: a
+ * resolved name is used verbatim, a not-found identifier means the input was
+ * never a Linear issue in the first place (nothing to warn about), and an
+ * unavailable lookup (no API key, offline, API error) means we *couldn't tell*
+ * — the caller keeps the branch as typed and warns instead of silently
+ * pretending the check passed.
+ */
+export type BranchNameLookup = {
+    kind: "resolved";
+    branchName: string;
+} | {
+    kind: "not-found";
+} | {
+    kind: "unavailable";
+    reason: string;
+};
+/**
+ * Resolves a human Linear identifier (`FE-123`) to the issue's `branchName`.
+ *
+ * Deliberately NOT routed through `loadSnapshot`: that query is filtered to
+ * open issues assigned to the current user on the configured teams, so it
+ * misses exactly the identifiers most likely to be typed by hand (someone
+ * else's ticket, a closed one, another team's). `issue(id:)` accepts the
+ * human identifier directly — verified against the live API, case-insensitive
+ * — and is a single ~250ms round-trip.
+ *
+ * A missing issue comes back as a GraphQL "Entity not found" error at HTTP
+ * 200, which `linearRequest` surfaces as a failure; it's matched here so a
+ * bogus identifier reads as `not-found` rather than as a transport problem.
+ */
+export declare function fetchIssueBranchName(repoRoot: string, issueId: string): Promise<BranchNameLookup>;
 export {};

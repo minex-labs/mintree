@@ -18,7 +18,7 @@ export const args = z.tuple([
 		argument({
 			name: "branch",
 			description:
-				"Branch in `<type>/<issue>-<kebab-desc>` format (e.g. feat/100-claude-md-inicial). On a Linear repo you can instead pass the issue's Linear branch name (e.g. jdoe/fe-68-landing-page).",
+				"Branch in `<type>/<issue>-<kebab-desc>` format (e.g. feat/100-claude-md-inicial). On a Linear repo you can instead pass the issue's Linear branch name (e.g. jdoe/fe-68-landing-page), or a bare issue id (e.g. FE-68), which is replaced by that issue's Linear branch name.",
 		}),
 	),
 ]);
@@ -48,6 +48,15 @@ export const options = z.object({
 			option({
 				description:
 					"Initial prompt to inject into Claude (only meaningful with --work; literal injection)",
+			}),
+		),
+	exact: z
+		.boolean()
+		.default(false)
+		.describe(
+			option({
+				description:
+					"Create the branch exactly as given, even when it's a bare Linear issue id (skips the branch-name lookup; the branch will close the issue on merge)",
 			}),
 		),
 	permissionMode: z
@@ -90,6 +99,7 @@ export default function Create({ args, options }: Props) {
 					base: options.base,
 					work: options.work,
 					prompt: options.prompt,
+					exact: options.exact,
 					permissionMode: options.permissionMode,
 				});
 				setResult(r);
@@ -97,7 +107,7 @@ export default function Create({ args, options }: Props) {
 				setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
 			}
 		})();
-	}, [branch, options.base, options.work, options.prompt, options.permissionMode]);
+	}, [branch, options.base, options.work, options.prompt, options.exact, options.permissionMode]);
 
 	// Kick the Project v2 transition once the worktree is in place. Only when
 	// --work was on — non-work creates leave status untouched. Errors from the
@@ -257,6 +267,44 @@ export default function Create({ args, options }: Props) {
 					</Text>
 				</Box>
 			)}
+
+			{/*
+			 * The branch was (or still is) named after the Linear issue. Linear
+			 * closes an issue when a branch bearing its identifier merges, no
+			 * matter what the PR body says, so a ticket can go Done with part of
+			 * its scope unshipped. Loud and last when we couldn't fix it; a quiet
+			 * note when we could. `--exact` says nothing extra — the step line
+			 * already reported it and the user asked for this on purpose.
+			 */}
+			{result.bareIssueBranch?.resolvedTo && (
+				<Box marginTop={1}>
+					<Text dimColor>
+						Branch name taken from Linear ({result.bareIssueBranch.requested} →{" "}
+						{result.bareIssueBranch.resolvedTo}); pass --exact to keep the id as typed.
+					</Text>
+				</Box>
+			)}
+			{result.bareIssueBranch &&
+				!result.bareIssueBranch.resolvedTo &&
+				result.bareIssueBranch.reason !== "--exact" && (
+					<Box marginTop={1} flexDirection="column">
+						<Text color="yellow" bold>
+							! Branch `{result.bareIssueBranch.requested}` is named after the Linear issue
+						</Text>
+						<Text color="yellow">
+							{" "}
+							Merging it will close {result.bareIssueBranch.requested} in Linear even if the PR says
+							&quot;Part of&quot;.
+						</Text>
+						<Text dimColor> couldn&apos;t check with Linear: {result.bareIssueBranch.reason}</Text>
+						<Box marginTop={1}>
+							<Text color="yellow">
+								↳ Rename it before opening a PR (`git branch -m &lt;new-name&gt;` in the worktree)
+								unless closing the issue on merge is what you want.
+							</Text>
+						</Box>
+					</Box>
+				)}
 		</Box>
 	);
 }

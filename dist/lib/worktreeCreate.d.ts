@@ -1,3 +1,5 @@
+import { type ParsedBranch } from "./branch.js";
+import { type BranchNameLookup } from "./providers/linear.js";
 import type { PermissionMode } from "./claude.js";
 export type CreateStepKind = "ok" | "skip" | "warn" | "error";
 export type CreateStep = {
@@ -20,9 +22,21 @@ export type ProgressCallbacks = {
 export type CreateOpts = {
     base?: string;
     work: boolean;
+    exact?: boolean;
     prompt?: string;
     permissionMode?: PermissionMode;
     progress?: ProgressCallbacks;
+};
+/**
+ * Set when the branch argument was the bare Linear issue identifier
+ * (`VAL-920`) — the shape that makes Linear close the issue on merge. Present
+ * whether the name was corrected or kept, so the caller can report both
+ * outcomes; `resolvedTo` distinguishes them.
+ */
+export type BareIssueBranchInfo = {
+    requested: string;
+    resolvedTo?: string;
+    reason?: string;
 };
 export type CreateResult = {
     ok: true;
@@ -36,6 +50,7 @@ export type CreateResult = {
     initError?: string;
     promptFile?: string;
     permissionMode?: PermissionMode;
+    bareIssueBranch?: BareIssueBranchInfo;
 } | {
     ok: false;
     message: string;
@@ -57,6 +72,41 @@ export declare function writePromptFile(prompt: string): string;
  * Async only because progress callbacks need event-loop yields between
  * blocking sections; without them the dashboard overlay would freeze.
  */
+/**
+ * The bare-issue-id guard.
+ *
+ * Linear transitions an issue to Done when a branch *named after it* merges —
+ * independently of the PR body, so `Part of VAL-924` in the description does
+ * not hold it back. That makes `mintree worktree create VAL-920` (the form
+ * everyone reaches for, because the identifier is what you have in hand when
+ * you pick up a ticket) create a branch that silently closes its ticket on
+ * merge, possibly with half the ticket's scope unshipped.
+ *
+ * Neither documented branch shape is affected: `<type>/<issue>-<desc>` and
+ * Linear's own `<user>/<team>-<n>-<slug>` both bury the identifier inside a
+ * longer name, so `isBareIssueIdBranch` is false and this returns the parse
+ * untouched, with no step, no network call and no output.
+ *
+ * When it does fire we prefer to *correct* rather than to nag: Linear knows
+ * the canonical branch name for the identifier, so we ask for it and build
+ * that branch instead. The lookup needs an API key and one ~250ms round-trip;
+ * when either is missing we keep the branch as typed and warn — never block,
+ * since a branch named after an issue is a legitimate (if rare) thing to want,
+ * and `--exact` says so explicitly.
+ *
+ * `lookup` is injected for tests; production always uses the real provider.
+ */
+export declare function resolveBareIssueBranch(args: {
+    repoRoot: string;
+    parsed: ParsedBranch;
+    teamKeys: string[];
+    exact: boolean;
+    lookup?: (repoRoot: string, issueId: string) => Promise<BranchNameLookup>;
+}): Promise<{
+    parsed: ParsedBranch;
+    info?: BareIssueBranchInfo;
+    step?: CreateStep;
+}>;
 export declare function runCreate(branchArg: string, opts: CreateOpts): Promise<CreateResult>;
 export type CreateDetachedOpts = {
     issueId: string;
