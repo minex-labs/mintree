@@ -887,3 +887,67 @@ export async function checkLinearSetup(repoRoot: string): Promise<LinearSetupChe
 				: undefined,
 	};
 }
+
+/**
+ * Outcome of resolving an issue identifier to Linear's suggested branch name.
+ *
+ * Three states, not two, because the caller reacts differently to each: a
+ * resolved name is used verbatim, a not-found identifier means the input was
+ * never a Linear issue in the first place (nothing to warn about), and an
+ * unavailable lookup (no API key, offline, API error) means we *couldn't tell*
+ * — the caller keeps the branch as typed and warns instead of silently
+ * pretending the check passed.
+ */
+export type BranchNameLookup =
+	| { kind: "resolved"; branchName: string }
+	| { kind: "not-found" }
+	| { kind: "unavailable"; reason: string };
+
+/**
+ * Resolves a human Linear identifier (`FE-123`) to the issue's `branchName`.
+ *
+ * Deliberately NOT routed through `loadSnapshot`: that query is filtered to
+ * open issues assigned to the current user on the configured teams, so it
+ * misses exactly the identifiers most likely to be typed by hand (someone
+ * else's ticket, a closed one, another team's). `issue(id:)` accepts the
+ * human identifier directly — verified against the live API, case-insensitive
+ * — and is a single ~250ms round-trip.
+ *
+ * A missing issue comes back as a GraphQL "Entity not found" error at HTTP
+ * 200, which `linearRequest` surfaces as a failure; it's matched here so a
+ * bogus identifier reads as `not-found` rather than as a transport problem.
+ */
+export async function fetchIssueBranchName(
+	repoRoot: string,
+	issueId: string,
+): Promise<BranchNameLookup> {
+	const cfg = readMetadata(repoRoot).linear;
+	const apiUrl = cfg?.apiUrl ?? DEFAULT_API_URL;
+	const apiKey = resolveApiKey();
+	if (!apiKey) {
+		return { kind: "unavailable", reason: "LINEAR_API_KEY not set" };
+	}
+	const r = await linearRequest<{ issue?: { identifier?: string; branchName?: string } | null }>(
+		apiUrl,
+		apiKey,
+		/* GraphQL */ `
+			query MintreeIssueBranchName($id: String!) {
+				issue(id: $id) {
+					identifier
+					branchName
+				}
+			}
+		`,
+		{ id: issueId },
+	);
+	if (!r.ok) {
+		if (/entity not found/i.test(r.error)) return { kind: "not-found" };
+		return { kind: "unavailable", reason: r.hint ?? r.error };
+	}
+	const branchName = r.data.issue?.branchName;
+	if (!r.data.issue) return { kind: "not-found" };
+	if (typeof branchName !== "string" || branchName.length === 0) {
+		return { kind: "unavailable", reason: `Linear returned no branchName for ${issueId}` };
+	}
+	return { kind: "resolved", branchName };
+}

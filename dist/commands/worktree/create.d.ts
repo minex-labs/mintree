@@ -5,6 +5,7 @@ export declare const options: z.ZodObject<{
     base: z.ZodOptional<z.ZodString>;
     work: z.ZodDefault<z.ZodBoolean>;
     prompt: z.ZodOptional<z.ZodString>;
+    exact: z.ZodDefault<z.ZodBoolean>;
     permissionMode: z.ZodOptional<z.ZodEnum<{
         default: "default";
         auto: "auto";

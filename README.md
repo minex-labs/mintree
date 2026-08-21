@@ -261,6 +261,10 @@ mintree worktree create fix/55-hotfix --base release/2.1
 # On a Linear repo you can pass the issue's own Linear branch name
 mintree worktree create jdoe/fe-68-landing-page --work
 
+# ...or just the issue id: mintree swaps in Linear's branch name, because a
+# branch named `FE-68` closes FE-68 when it merges (--exact opts out)
+mintree worktree create FE-68
+
 # Resume Claude in the worktree you're currently inside
 # (the worktree dir is the bare issue id)
 cd .mintree/worktrees/FE-123
@@ -326,6 +330,22 @@ So **when `provider` is `linear` and the issue has a `branchName`, mintree uses 
 - From the CLI, you can pass the Linear branch directly: `mintree worktree create jdoe/fe-68-landing-page`. mintree finds the Linear identifier (`fe-68`) by matching it against your configured `linear.teams[].key`, and normalises it to the canonical `FE-68`.
 
 The worktree directory is still the **bare, upper-case issue id** (`FE-68`) regardless of the branch name, matching the GitHub case. The `<type>/<issue>-<desc>` convention is still accepted on Linear repos too — it's used as a fallback when an issue has no `branchName`. GitHub repos are unaffected: they always use the convention and reject Linear-style branches.
+
+#### Passing a bare issue id
+
+`mintree worktree create FE-68` — the identifier and nothing else — is the form everyone reaches for, because the identifier is what you have in hand when you pick up a ticket. It is also the one shape you don't want as a branch name: **Linear closes an issue when a branch named after it merges**, no matter what the PR body says, so `FE-68` can take its ticket to Done with part of the scope unshipped.
+
+So on a Linear repo with configured teams, mintree asks Linear for that issue's `branchName` and creates **that** branch instead, reporting the substitution:
+
+```
+$ mintree worktree create FE-68
+✓ parsed branch (issue=FE-68, branch=jdoe/fe-68-landing-page)
+! used Linear's branch name (FE-68 → jdoe/fe-68-landing-page; a branch named after the issue closes it on merge)
+```
+
+The worktree directory is `FE-68` either way. If the lookup can't run — no `LINEAR_API_KEY`, offline, Linear unreachable — the branch is created **exactly as you typed it** and mintree warns instead; it never blocks. Pass **`--exact`** to keep the bare id deliberately and skip the lookup.
+
+Nothing else is affected: a `<type>/<issue>-<desc>` branch, a Linear `branchName`, an id that turns out not to be a Linear issue, a repo with no Linear teams configured, and every GitHub repo all go through untouched — no lookup, no warning, no output.
 
 ---
 

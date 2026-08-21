@@ -63,3 +63,22 @@ export declare function extractLinearIssueId(branch: string, teamKeys: string[])
  * dir-name recovery regexes elsewhere.
  */
 export declare function parseLinearBranch(rawBranch: string, teamKeys: string[]): ParsedBranch | ParseError;
+/**
+ * True when the branch name IS the issue identifier and nothing else
+ * (`VAL-920`, `val-920`) — no `<type>/` prefix, no description, no user
+ * namespace.
+ *
+ * Why this matters: Linear auto-transitions an issue to Done when a branch
+ * *named after it* merges, independently of the PR body's magic words. A
+ * branch called `VAL-920` therefore closes VAL-920 on merge even when the PR
+ * only says "Part of". Both branch shapes mintree documents
+ * (`<type>/<issue>-<desc>` and Linear's own `<user>/<team>-<n>-<slug>`)
+ * carry the identifier *inside* a longer name and are unaffected — only the
+ * bare form is.
+ *
+ * The test is an equality against the already-parsed identifier, not a fresh
+ * regex: the caller has, by construction, resolved `issueId` against the
+ * repo's configured Linear team keys, so this can't fire on a branch like
+ * `release_mt-2` or `integration-1` that merely looks id-shaped.
+ */
+export declare function isBareIssueIdBranch(parsed: ParsedBranch): boolean;

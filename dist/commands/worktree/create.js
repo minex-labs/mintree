@@ -13,7 +13,7 @@ export const description = "Create a worktree for an issue branch";
 export const args = z.tuple([
     z.string().describe(argument({
         name: "branch",
-        description: "Branch in `<type>/<issue>-<kebab-desc>` format (e.g. feat/100-claude-md-inicial). On a Linear repo you can instead pass the issue's Linear branch name (e.g. jdoe/fe-68-landing-page).",
+        description: "Branch in `<type>/<issue>-<kebab-desc>` format (e.g. feat/100-claude-md-inicial). On a Linear repo you can instead pass the issue's Linear branch name (e.g. jdoe/fe-68-landing-page), or a bare issue id (e.g. FE-68), which is replaced by that issue's Linear branch name.",
     })),
 ]);
 export const options = z.object({
@@ -34,6 +34,12 @@ export const options = z.object({
         .optional()
         .describe(option({
         description: "Initial prompt to inject into Claude (only meaningful with --work; literal injection)",
+    })),
+    exact: z
+        .boolean()
+        .default(false)
+        .describe(option({
+        description: "Create the branch exactly as given, even when it's a bare Linear issue id (skips the branch-name lookup; the branch will close the issue on merge)",
     })),
     permissionMode: z
         .enum(PERMISSION_MODES)
@@ -63,6 +69,7 @@ export default function Create({ args, options }) {
                     base: options.base,
                     work: options.work,
                     prompt: options.prompt,
+                    exact: options.exact,
                     permissionMode: options.permissionMode,
                 });
                 setResult(r);
@@ -71,7 +78,7 @@ export default function Create({ args, options }) {
                 setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
             }
         })();
-    }, [branch, options.base, options.work, options.prompt, options.permissionMode]);
+    }, [branch, options.base, options.work, options.prompt, options.exact, options.permissionMode]);
     // Kick the Project v2 transition once the worktree is in place. Only when
     // --work was on — non-work creates leave status untouched. Errors from the
     // GraphQL call surface as a step but never block the worktree hand-off.
@@ -147,5 +154,7 @@ export default function Create({ args, options }) {
                     return (_jsxs(Box, { children: [_jsx(StepIcon, { kind: step.kind }), _jsx(Text, { children: " " }), _jsx(Text, { children: step.label }), step.detail && _jsxs(Text, { dimColor: true, children: [" (", step.detail, ")"] })] }));
                 })(), result.initFailed ? (_jsxs(Box, { marginTop: 1, flexDirection: "column", children: [_jsx(Text, { color: "red", bold: true, children: "\u2717 Worktree created but NOT initialised \u2014 .mintree/init.sh failed" }), result.initError && _jsxs(Text, { color: "red", children: [" ", result.initError] }), _jsxs(Text, { dimColor: true, children: [" at ", result.worktreePath] }), _jsx(Box, { marginTop: 1, children: _jsx(Text, { color: "yellow", children: "\u21B3 Whatever init.sh sets up (isolation, per-worktree config) is missing. Fix the hook and re-run it in the worktree before working there." }) })] })) : (_jsxs(Box, { marginTop: 1, flexDirection: "column", children: [_jsxs(Text, { color: "green", children: ["Worktree ready at ", _jsx(Text, { bold: true, children: result.worktreePath })] }), _jsx(Text, { dimColor: true, children: result.work
                             ? "Launching Claude in the new worktree..."
-                            : "Next: `mt worktree work` to start a Claude session, or `cd` and run `claude` directly." })] }))] }));
+                            : "Next: `mt worktree work` to start a Claude session, or `cd` and run `claude` directly." })] })), result.bareIssueBranch?.resolvedTo && (_jsx(Box, { marginTop: 1, children: _jsxs(Text, { dimColor: true, children: ["Branch name taken from Linear (", result.bareIssueBranch.requested, " \u2192", " ", result.bareIssueBranch.resolvedTo, "); pass --exact to keep the id as typed."] }) })), result.bareIssueBranch &&
+                !result.bareIssueBranch.resolvedTo &&
+                result.bareIssueBranch.reason !== "--exact" && (_jsxs(Box, { marginTop: 1, flexDirection: "column", children: [_jsxs(Text, { color: "yellow", bold: true, children: ["! Branch `", result.bareIssueBranch.requested, "` is named after the Linear issue"] }), _jsxs(Text, { color: "yellow", children: [" ", "Merging it will close ", result.bareIssueBranch.requested, " in Linear even if the PR says \"Part of\"."] }), _jsxs(Text, { dimColor: true, children: [" couldn't check with Linear: ", result.bareIssueBranch.reason] }), _jsx(Box, { marginTop: 1, children: _jsx(Text, { color: "yellow", children: "\u21B3 Rename it before opening a PR (`git branch -m <new-name>` in the worktree) unless closing the issue on merge is what you want." }) })] }))] }));
 }

@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 import {
 	parseBranch,
 	parseLinearBranch,
+	isBareIssueIdBranch,
 	isParseError,
 	type ParsedBranch,
 	type ParseError,
@@ -26,6 +27,7 @@ import {
 	isExecutable,
 } from "./git.js";
 import { readMetadata, upsertIssue, setInitFailed, type LinkFileEntry } from "./metadata.js";
+import { fetchIssueBranchName, type BranchNameLookup } from "./providers/linear.js";
 import type { PermissionMode } from "./claude.js";
 
 /**
@@ -78,9 +80,31 @@ export type ProgressCallbacks = {
 export type CreateOpts = {
 	base?: string;
 	work: boolean;
+	// Escape hatch for the bare-issue-id guard: create the branch exactly as
+	// typed, without asking Linear for the issue's canonical branch name. The
+	// guard corrects a name the caller almost never meant to ask for; `exact`
+	// is how you say you did mean it.
+	exact?: boolean;
 	prompt?: string;
 	permissionMode?: PermissionMode;
 	progress?: ProgressCallbacks;
+};
+
+/**
+ * Set when the branch argument was the bare Linear issue identifier
+ * (`VAL-920`) — the shape that makes Linear close the issue on merge. Present
+ * whether the name was corrected or kept, so the caller can report both
+ * outcomes; `resolvedTo` distinguishes them.
+ */
+export type BareIssueBranchInfo = {
+	// The identifier exactly as the caller typed it.
+	requested: string;
+	// Linear's canonical branch name, when the lookup resolved it. Absent when
+	// the bare name was kept.
+	resolvedTo?: string;
+	// Why the bare name was kept (lookup unavailable, or `--exact`). Absent
+	// when the name was corrected.
+	reason?: string;
 };
 
 export type CreateResult =
@@ -103,6 +127,9 @@ export type CreateResult =
 			initError?: string;
 			promptFile?: string;
 			permissionMode?: PermissionMode;
+			// See BareIssueBranchInfo. Undefined for every branch shape mintree
+			// documents — only a bare identifier populates it.
+			bareIssueBranch?: BareIssueBranchInfo;
 	  }
 	| { ok: false; message: string; hint?: string };
 
@@ -300,6 +327,97 @@ function nextFrame(progress?: ProgressCallbacks): Promise<void> {
  * Async only because progress callbacks need event-loop yields between
  * blocking sections; without them the dashboard overlay would freeze.
  */
+/**
+ * The bare-issue-id guard.
+ *
+ * Linear transitions an issue to Done when a branch *named after it* merges —
+ * independently of the PR body, so `Part of VAL-924` in the description does
+ * not hold it back. That makes `mintree worktree create VAL-920` (the form
+ * everyone reaches for, because the identifier is what you have in hand when
+ * you pick up a ticket) create a branch that silently closes its ticket on
+ * merge, possibly with half the ticket's scope unshipped.
+ *
+ * Neither documented branch shape is affected: `<type>/<issue>-<desc>` and
+ * Linear's own `<user>/<team>-<n>-<slug>` both bury the identifier inside a
+ * longer name, so `isBareIssueIdBranch` is false and this returns the parse
+ * untouched, with no step, no network call and no output.
+ *
+ * When it does fire we prefer to *correct* rather than to nag: Linear knows
+ * the canonical branch name for the identifier, so we ask for it and build
+ * that branch instead. The lookup needs an API key and one ~250ms round-trip;
+ * when either is missing we keep the branch as typed and warn — never block,
+ * since a branch named after an issue is a legitimate (if rare) thing to want,
+ * and `--exact` says so explicitly.
+ *
+ * `lookup` is injected for tests; production always uses the real provider.
+ */
+export async function resolveBareIssueBranch(args: {
+	repoRoot: string;
+	parsed: ParsedBranch;
+	// The repo's configured Linear team keys. EMPTY DISABLES THE GUARD: without
+	// them `parseLinearBranch` falls back to a loose `<word>-<digits>` match,
+	// which hits real branch names (`release_mt-2`, `integration-1`) that have
+	// nothing to do with Linear.
+	teamKeys: string[];
+	exact: boolean;
+	lookup?: (repoRoot: string, issueId: string) => Promise<BranchNameLookup>;
+}): Promise<{ parsed: ParsedBranch; info?: BareIssueBranchInfo; step?: CreateStep }> {
+	const { repoRoot, parsed, teamKeys, exact } = args;
+	if (teamKeys.length === 0) return { parsed };
+	if (!isBareIssueIdBranch(parsed)) return { parsed };
+
+	const requested = parsed.branch;
+	const closesWarning = `\`${requested}\` will close the Linear issue when merged`;
+
+	if (exact) {
+		return {
+			parsed,
+			info: { requested, reason: "--exact" },
+			step: {
+				kind: "skip",
+				label: "kept branch name verbatim",
+				detail: `--exact; ${closesWarning}`,
+			},
+		};
+	}
+
+	const lookup = args.lookup ?? fetchIssueBranchName;
+	const found = await lookup(repoRoot, parsed.issueId);
+
+	// Not a Linear issue at all — the argument only *looked* id-shaped. Nothing
+	// to correct and nothing to warn about, so stay quiet.
+	if (found.kind === "not-found") return { parsed };
+
+	if (found.kind === "resolved" && found.branchName.toUpperCase() !== requested.toUpperCase()) {
+		const reparsed = parseLinearBranch(found.branchName, teamKeys);
+		if (!isParseError(reparsed)) {
+			return {
+				parsed: reparsed,
+				info: { requested, resolvedTo: reparsed.branch },
+				step: {
+					kind: "warn",
+					label: "used Linear's branch name",
+					detail: `${requested} → ${reparsed.branch}; a branch named after the issue closes it on merge`,
+				},
+			};
+		}
+	}
+
+	const reason =
+		found.kind === "unavailable"
+			? found.reason
+			: `Linear's own branch name for ${parsed.issueId} is ${requested}`;
+	return {
+		parsed,
+		info: { requested, reason },
+		step: {
+			kind: "warn",
+			label: "branch is a bare issue id",
+			detail: `${closesWarning} (${reason})`,
+		},
+	};
+}
+
 export async function runCreate(branchArg: string, opts: CreateOpts): Promise<CreateResult> {
 	const progress = opts.progress;
 	const root = findMainRepoRoot();
@@ -319,10 +437,30 @@ export async function runCreate(branchArg: string, opts: CreateOpts): Promise<Cr
 		};
 	}
 
-	const parsed = resolveCreateBranch(root, branchArg);
-	if (isParseError(parsed)) {
-		return { ok: false, message: parsed.error, hint: parsed.hint };
+	const parsedArg = resolveCreateBranch(root, branchArg);
+	if (isParseError(parsedArg)) {
+		return { ok: false, message: parsedArg.error, hint: parsedArg.hint };
 	}
+
+	// Runs before the already-checked-out / dir-exists checks below so those
+	// look at the branch we're actually going to create, not the one that was
+	// typed. Costs nothing (no I/O, no step) unless the arg is a bare
+	// identifier on a Linear repo with configured teams.
+	const meta = readMetadata(root);
+	const linearTeamKeys =
+		meta.provider === "linear" ? (meta.linear?.teams ?? []).map((t) => t.key) : [];
+	if (linearTeamKeys.length > 0 && isBareIssueIdBranch(parsedArg) && !opts.exact) {
+		progress?.onPending?.("Resolving branch name from Linear...");
+		await nextFrame(progress);
+	}
+	const guard = await resolveBareIssueBranch({
+		repoRoot: root,
+		parsed: parsedArg,
+		teamKeys: linearTeamKeys,
+		exact: opts.exact ?? false,
+	});
+	progress?.onPending?.(null);
+	const parsed = guard.parsed;
 
 	const existingWorktree = worktreeForBranch(root, parsed.branch);
 	if (existingWorktree) {
@@ -356,6 +494,11 @@ export async function runCreate(branchArg: string, opts: CreateOpts): Promise<Cr
 			: `issue=${parsed.issueId}, branch=${parsed.branch}`,
 	});
 	await nextFrame(progress);
+
+	if (guard.step) {
+		pushStep(guard.step);
+		await nextFrame(progress);
+	}
 
 	// Fetch before resolving refs so the worktree forks from fresh code, not a
 	// stale local checkout. Best-effort: offline / no-remote just warns and we
@@ -496,6 +639,7 @@ export async function runCreate(branchArg: string, opts: CreateOpts): Promise<Cr
 		...(initError ? { initError } : {}),
 		promptFile,
 		permissionMode: opts.permissionMode,
+		...(guard.info ? { bareIssueBranch: guard.info } : {}),
 	};
 }
 
