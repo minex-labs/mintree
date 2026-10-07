@@ -420,6 +420,13 @@ Cambios de la 0.5.32 (id pelado de Linear como nombre de branch):
   - Tests: 15 nuevos en `test/bareIssueBranch.test.ts` — 9 unitarios con lookup inyectado (**cada caso "silencioso" es control positivo: repo Linear con teams, el arg llega al guard, y se asserta que el lookup nunca se llamó**) + 6 end-to-end contra un repo git real con `global.fetch` mockeado, que verifican `git branch --show-current` **dentro del worktree**, no lo que dice el resultado. Verificado además con el CLI real contra la API de Linear en vivo: `create VAL-920` dejó `martinmineo/val-920-…` y ninguna branch `VAL-920`.
   - **No cubierto**: el dashboard no cambia (ya pasa el `branchName` del issue, nunca un id pelado) y `runCreateDetached` tampoco (no crea branch). Tampoco hay renombre de branches ya creadas con el id pelado.
 
+Cambios de la 0.5.33 (keep-awake con caffeinate):
+
+- **0.5.33** (`feat(claude)`): `launchClaude` (`source/lib/claude.ts`) arranca, junto a cada Claude que lanza, un `caffeinate -i -w <pid de claude>` (módulo nuevo `source/lib/caffeinate.ts`). Motivo, **medido en vivo**: Claude Code ya corre `caffeinate -i -t 300` como hijo propio, pero **sólo mientras procesa un turno** — las sesiones idle (esperando respuesta, típicamente desde el celular por Remote Control) no tenían ninguno, así que la Mac podía dormirse y la sesión dejaba de ser alcanzable.
+  - `-w <pid>` ata la assertion al proceso de Claude: muere con él aunque mintree muera antes. Spawn con `stdio: ignore` + `unref()`, best-effort (si falla, no bloquea el launch). No-op fuera de macOS; opt-out con `MINTREE_NO_CAFFEINATE=1`.
+  - `-i` sólo evita el **idle sleep del sistema**: la pantalla puede apagarse y bloquearse (no corta procesos), y cerrar la tapa a batería duerme igual.
+  - Tests en `test/caffeinate.test.ts` (args + gating por plataforma/env). Verificado e2e: el caffeinate aparece atado al pid y desaparece cuando el proceso termina.
+
 Áreas que NO se atacaron y siguen pendientes para futuro:
 
 - `init --provider linear` interactivo: hoy hay que pasar `--team` repetido o editar `metadata.json`. Lo ideal es que `init` consulte la API y deje elegir equipos.

@@ -2,6 +2,7 @@ import { execSync, spawn } from "child_process";
 import { existsSync, writeFileSync } from "fs";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
+import { caffeinateWhile } from "./caffeinate.js";
 import { setITermBadge, clearITermBadge } from "./terminal.js";
 export const PERMISSION_MODES = ["default", "auto"];
 /**
@@ -83,6 +84,10 @@ export function launchClaude(options) {
     if (badge)
         setITermBadge(badge);
     const child = spawn(bin, args, { stdio: "inherit", cwd: options.cwd });
+    // Keep the Mac awake while the session lives, idle turns included (Claude
+    // Code only caffeinates during a turn). Bound to Claude's pid, so it exits
+    // with Claude. No-op off macOS or with MINTREE_NO_CAFFEINATE=1.
+    caffeinateWhile(child.pid);
     // Clear the badge once Claude exits so the badge doesn't linger on the
     // shell that regains the TTY.
     if (badge)
